@@ -1,42 +1,126 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, TrendingUp, Newspaper, BarChart3, Info } from 'lucide-react';
+import { RefreshCw, TrendingUp, Newspaper, BarChart3, Info, Wifi, WifiOff } from 'lucide-react';
 import { PriceCard } from '../components/PriceCard';
 import { PriceChart } from '../components/PriceChart';
 import { NewsCard } from '../components/NewsCard';
 import { FactorCard } from '../components/FactorCard';
 import { StatCard } from '../components/StatCard';
 import { useAppStore } from '../store';
-import { priceHistory, marketOverview, newsItems, marketFactors, getRealtimePrice } from '../services/mockData';
+import { priceHistory, marketOverview, newsItems, marketFactors } from '../services/mockData';
+import { fetchCocoaPrice, getCachedPrice, shouldFetchNewPrice } from '../services/priceApi';
 import { format } from 'date-fns';
+
+// API key from environment variable
+const API_KEY = import.meta.env.VITE_COMMODITIES_API_KEY;
 
 export function Dashboard() {
   const navigate = useNavigate();
   const { selectedTimeRange, setTimeRange, lastUpdated, setLastUpdated } = useAppStore();
   const [currentPrice, setCurrentPrice] = useState(marketOverview.currentPrice);
+  const [dayHigh, setDayHigh] = useState(marketOverview.dayHigh);
+  const [dayLow, setDayLow] = useState(marketOverview.dayLow);
+  const [dayChange, setDayChange] = useState(marketOverview.dayChange);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLive, setIsLive] = useState(false);
+  const [dataSource, setDataSource] = useState<'live' | 'cached' | 'demo'>('demo');
 
-  // Simulate real-time price updates
+  // Fetch live price from API
+  const fetchLivePrice = useCallback(async (force: boolean = false) => {
+    if (!API_KEY) {
+      setDataSource('demo');
+      setIsLive(false);
+      return;
+    }
+
+    // Check cache first (unless forced refresh)
+    if (!force) {
+      const cached = getCachedPrice();
+      if (cached && !shouldFetchNewPrice()) {
+        setCurrentPrice(cached.price);
+        setDayHigh(cached.dayHigh);
+        setDayLow(cached.dayLow);
+        setDayChange({
+          value: cached.change,
+          percentage: cached.changePercent,
+          direction: cached.change > 0 ? 'up' : cached.change < 0 ? 'down' : 'neutral'
+        });
+        setLastUpdated(new Date(cached.timestamp).toISOString());
+        setDataSource('cached');
+        setIsLive(true);
+        return;
+      }
+    }
+
+    try {
+      const data = await fetchCocoaPrice(API_KEY);
+      if (data) {
+        setCurrentPrice(data.price);
+        setDayHigh(data.dayHigh);
+        setDayLow(data.dayLow);
+        setDayChange({
+          value: data.change,
+          percentage: data.changePercent,
+          direction: data.change > 0 ? 'up' : data.change < 0 ? 'down' : 'neutral'
+        });
+        setLastUpdated(new Date(data.timestamp).toISOString());
+        setDataSource('live');
+        setIsLive(true);
+      }
+    } catch (error) {
+      console.error('Failed to fetch live price:', error);
+      // Fall back to cached or demo data
+      const cached = getCachedPrice();
+      if (cached) {
+        setCurrentPrice(cached.price);
+        setDataSource('cached');
+        setIsLive(true);
+      } else {
+        setDataSource('demo');
+        setIsLive(false);
+      }
+    }
+  }, [setLastUpdated]);
+
+  // Initial fetch and periodic updates
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentPrice(getRealtimePrice());
-      setLastUpdated(new Date().toISOString());
-    }, 10000); // Update every 10 seconds
+    // Fetch on mount
+    fetchLivePrice();
 
-    return () => clearInterval(interval);
-  }, []);
+    // Set up periodic fetching (every 90 minutes if API key exists)
+    if (API_KEY) {
+      const interval = setInterval(() => {
+        if (shouldFetchNewPrice()) {
+          fetchLivePrice();
+        }
+      }, 5 * 60 * 1000); // Check every 5 minutes
 
-  const handleRefresh = () => {
+      return () => clearInterval(interval);
+    }
+  }, [fetchLivePrice]);
+
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setCurrentPrice(getRealtimePrice());
+
+    if (API_KEY && shouldFetchNewPrice()) {
+      await fetchLivePrice(true);
+    } else {
+      // Just update the timestamp for demo mode
       setLastUpdated(new Date().toISOString());
+    }
+
+    setTimeout(() => {
       setIsRefreshing(false);
-    }, 1000);
+    }, 500);
   };
 
   const bullishCount = marketFactors.filter(f => f.impact === 'bullish').length;
   const bearishCount = marketFactors.filter(f => f.impact === 'bearish').length;
+
+  // Calculate price position for range indicator
+  const pricePosition = dayHigh !== dayLow
+    ? ((currentPrice - dayLow) / (dayHigh - dayLow)) * 100
+    : 50;
 
   return (
     <div className="dashboard">
@@ -45,14 +129,20 @@ export function Dashboard() {
         <div className="header-content">
           <div className="header-title">
             <h1>Cocoa Tracker</h1>
-            <span className="live-badge">LIVE</span>
+            <span className={`live-badge ${isLive ? '' : 'demo'}`}>
+              {isLive ? (
+                <><Wifi size={10} /> LIVE</>
+              ) : (
+                <><WifiOff size={10} /> DEMO</>
+              )}
+            </span>
           </div>
           <button className={`refresh-btn ${isRefreshing ? 'refreshing' : ''}`} onClick={handleRefresh}>
             <RefreshCw size={18} />
           </button>
         </div>
         <p className="last-updated">
-          Updated {format(new Date(lastUpdated), 'HH:mm:ss')}
+          {dataSource === 'live' ? 'Live' : dataSource === 'cached' ? 'Cached' : 'Demo'} • Updated {format(new Date(lastUpdated), 'HH:mm:ss')}
         </p>
       </header>
 
@@ -64,28 +154,26 @@ export function Dashboard() {
             <span className="price-value">${currentPrice.toLocaleString()}</span>
             <span className="price-unit">USD/MT</span>
           </div>
-          <div className={`price-change-hero ${marketOverview.dayChange.direction}`}>
-            <span>{marketOverview.dayChange.direction === 'up' ? '+' : ''}{marketOverview.dayChange.value}</span>
-            <span>({marketOverview.dayChange.direction === 'up' ? '+' : ''}{marketOverview.dayChange.percentage}%)</span>
+          <div className={`price-change-hero ${dayChange.direction}`}>
+            <span>{dayChange.direction === 'up' ? '+' : ''}{dayChange.value}</span>
+            <span>({dayChange.direction === 'up' ? '+' : ''}{dayChange.percentage}%)</span>
             <span className="change-period">today</span>
           </div>
         </div>
         <div className="price-range">
           <div className="range-item">
             <span className="range-label">Day Low</span>
-            <span className="range-value">${marketOverview.dayLow.toLocaleString()}</span>
+            <span className="range-value">${dayLow.toLocaleString()}</span>
           </div>
           <div className="range-bar">
             <div
               className="range-indicator"
-              style={{
-                left: `${((currentPrice - marketOverview.dayLow) / (marketOverview.dayHigh - marketOverview.dayLow)) * 100}%`
-              }}
+              style={{ left: `${Math.min(100, Math.max(0, pricePosition))}%` }}
             />
           </div>
           <div className="range-item">
             <span className="range-label">Day High</span>
-            <span className="range-value">${marketOverview.dayHigh.toLocaleString()}</span>
+            <span className="range-value">${dayHigh.toLocaleString()}</span>
           </div>
         </div>
       </section>
@@ -206,7 +294,7 @@ export function Dashboard() {
 
       {/* Footer */}
       <footer className="dashboard-footer">
-        <p>Data for educational purposes only</p>
+        <p>{isLive ? 'Live data from Commodities-API' : 'Demo data for educational purposes'}</p>
         <p>Not financial advice</p>
       </footer>
     </div>
