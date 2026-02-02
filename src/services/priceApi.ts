@@ -46,9 +46,35 @@ const setCachedPrice = (data: PriceCache): void => {
   }
 };
 
+// Check if market is open (ICE Cocoa futures: ~4:45 AM - 1:30 PM ET, Mon-Fri)
+const isMarketOpen = (): boolean => {
+  const now = new Date();
+
+  // Convert to ET (UTC-5 or UTC-4 during DST)
+  // Using a simple approach - get hours in ET timezone
+  const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const hour = etTime.getHours();
+  const minute = etTime.getMinutes();
+  const dayOfWeek = etTime.getDay();
+
+  // Weekend check (0 = Sunday, 6 = Saturday)
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return false;
+  }
+
+  // Market hours: 4:45 AM - 1:30 PM ET
+  const marketOpenMinutes = 4 * 60 + 45;  // 4:45 AM = 285 minutes
+  const marketCloseMinutes = 13 * 60 + 30; // 1:30 PM = 810 minutes
+  const currentMinutes = hour * 60 + minute;
+
+  return currentMinutes >= marketOpenMinutes && currentMinutes <= marketCloseMinutes;
+};
+
 // Check if we should fetch new data
 export const shouldFetchNewPrice = (): boolean => {
   const cached = getCachedPrice();
+
+  // If no cache, fetch once (even if market is closed, to get latest available)
   if (!cached) return true;
 
   const now = Date.now();
@@ -59,16 +85,22 @@ export const shouldFetchNewPrice = (): boolean => {
     return false;
   }
 
-  // Check if it's a weekday (markets are closed on weekends)
-  const today = new Date();
-  const dayOfWeek = today.getUTCDay();
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    // Weekend - only fetch once per day
-    const lastFetchDate = new Date(cached.timestamp).toDateString();
-    const todayDate = today.toDateString();
-    return lastFetchDate !== todayDate;
+  // Check if market is open
+  if (isMarketOpen()) {
+    // Market is open - allow fetching every 90 minutes
+    return true;
   }
 
+  // Market is closed - only fetch once per day to save API calls
+  const cachedDate = new Date(cached.timestamp).toDateString();
+  const todayDate = new Date().toDateString();
+
+  // If we already fetched today, don't fetch again
+  if (cachedDate === todayDate) {
+    return false;
+  }
+
+  // New day but market closed - allow one fetch to get latest closing price
   return true;
 };
 
