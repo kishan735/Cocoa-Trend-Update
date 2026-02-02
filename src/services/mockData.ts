@@ -1,26 +1,27 @@
 import type { PriceData, MarketOverview, NewsItem, MarketFactor } from '../types';
 
-// Generate realistic price data
+// Generate realistic price data based on current market (Feb 2026: ~$4,100/MT)
 const generatePriceHistory = (days: number): PriceData[] => {
   const data: PriceData[] = [];
-  let basePrice = 8500; // Starting price in USD per metric ton
+  // Cocoa dropped from ~$11,000 highs in 2024 to ~$4,100 in early 2026
+  let basePrice = 7500; // Starting price a year ago (was higher)
   const now = new Date();
 
   for (let i = days; i >= 0; i--) {
     const date = new Date(now);
     date.setDate(date.getDate() - i);
 
-    // Add some realistic volatility
-    const volatility = (Math.random() - 0.5) * 300;
-    const trend = Math.sin(i / 30) * 200; // Cyclical trend
-    const noise = (Math.random() - 0.5) * 100;
+    // Simulate the downward trend from 2024 highs to current lows
+    const trendDown = -((days - i) / days) * 3400; // Gradual decline of ~$3,400 over the year
+    const volatility = (Math.random() - 0.5) * 150;
+    const noise = (Math.random() - 0.5) * 50;
 
-    basePrice = Math.max(7000, Math.min(12000, basePrice + volatility * 0.1 + trend * 0.05 + noise));
+    const price = Math.max(3800, Math.min(8000, basePrice + trendDown + volatility + noise));
 
-    const open = basePrice + (Math.random() - 0.5) * 100;
-    const close = basePrice;
-    const high = Math.max(open, close) + Math.random() * 80;
-    const low = Math.min(open, close) - Math.random() * 80;
+    const open = price + (Math.random() - 0.5) * 60;
+    const close = price;
+    const high = Math.max(open, close) + Math.random() * 40;
+    const low = Math.min(open, close) - Math.random() * 40;
     const volume = Math.floor(50000 + Math.random() * 30000);
 
     data.push({
@@ -73,23 +74,23 @@ export const marketOverview: MarketOverview = {
 export const newsItems: NewsItem[] = [
   {
     id: '1',
-    title: 'Cocoa Prices Surge Amid West African Supply Concerns',
-    summary: 'Persistent dry weather in Ivory Coast and Ghana raises concerns about next season\'s harvest, pushing prices higher.',
-    content: `Cocoa futures have climbed to multi-year highs as adverse weather conditions continue to threaten production in West Africa, which accounts for approximately 70% of global cocoa supply.
+    title: 'Cocoa Slumps Below $4,000 as Supply Outlook Improves',
+    summary: 'Favorable weather in West Africa and weakening demand push cocoa prices to lowest levels since January 2024.',
+    content: `Cocoa futures have fallen sharply, dropping below $4,000 per metric ton for the first time since early 2024, as improved supply conditions and softer demand reshape the market outlook.
 
-The Ivory Coast, the world's largest cocoa producer, has experienced below-average rainfall during critical growing periods. Farmers report that cocoa trees are showing signs of stress, with some regions experiencing premature pod drop.
+The dramatic reversal comes after cocoa hit record highs above $11,000/MT in 2024 due to severe supply disruptions. Now, favorable weather across West Africa is boosting production expectations.
 
-"The situation is concerning," said Jean-Marc Anga, former executive director of the International Cocoa Organization. "If these conditions persist, we could see a significant shortfall in the upcoming main crop season."
+"The supply picture has completely transformed," said a senior commodities analyst at StoneX. "We're now forecasting a global surplus of 287,000 metric tons for the 2025/26 season."
 
-Ghana, the second-largest producer, is facing similar challenges. The Ghana Cocoa Board has revised its production forecast downward by 15%, citing both weather issues and aging tree stock.
+Ivory Coast and Ghana, which together produce about 60% of the world's cocoa, are reporting improved harvests. February and March harvests are expected to be particularly strong due to favorable rainfall patterns.
 
-Market analysts suggest that prices could remain elevated through the next harvest season as the supply deficit becomes more apparent. Major chocolate manufacturers are already adjusting their hedging strategies to account for higher raw material costs.
+Demand has also weakened as chocolate manufacturers and consumers adjust to previously elevated prices. European grinding data shows a 5% decline year-over-year as companies reformulate products and consumers trade down.
 
-The current supply concerns come at a time when global demand for cocoa continues to grow, particularly in emerging markets across Asia. This demand-supply imbalance is expected to support prices in the medium term.`,
-    source: 'Reuters Commodities',
+Market analysts suggest prices could stabilize around current levels, though some see potential for further downside if the supply surplus materializes as expected. The sharp decline has been a relief for chocolate makers but challenging for farmers who benefited from last year's high prices.`,
+    source: 'Bloomberg Commodities',
     publishedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     category: 'supply',
-    impact: 'positive',
+    impact: 'negative',
     imageUrl: undefined
   },
   {
